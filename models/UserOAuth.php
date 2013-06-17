@@ -13,11 +13,11 @@
  *
  * @version 1.2.3
  * @copyright Copyright &copy; 2013 Sviatoslav Danylenko
- * @author Sviatoslav Danylenko <dev@udf.su> 
+ * @author Sviatoslav Danylenko <dev@udf.su>
  * @license PGPLv3 ({@link http://www.gnu.org/licenses/gpl-3.0.html})
  * @link https://github.com/SleepWalker/hoauth
  */
-class UserOAuth extends CActiveRecord
+class UserOAuth extends EMongoDocument
 {
   /**
    * @var $_hybridauth HybridAuth class instance
@@ -25,57 +25,52 @@ class UserOAuth extends CActiveRecord
   protected $_hybridauth;
 
   /**
-   * @var $_adapter HybridAuth adapter  
+   * @var $_adapter HybridAuth adapter
    */
   protected $_adapter;
 
   /**
-   * @var $_profileCache property for holding of unserialized 
+   * @var $_profileCache property for holding of unserialized
    *      profile cache copy
    */
   protected $_profileCache;
 
-	/**
-	 * Returns the static model of the specified AR class.
-	 * @param string $className active record class name.
-	 * @return UserOAuth the static model class
-	 */
-	public static function model($className=__CLASS__)
+  /**
+  * Collection variables
+  */
+  public $user_id;
+  public $provider;
+  public $identifier;
+  public $profile_cache;
+  public $session_data;
+
+  /**
+   * Returns the static model of the specified AR class.
+   * @param string $className active record class name.
+   * @return UserOAuth the static model class
+   */
+  public static function model($className=__CLASS__)
   {
-    try
-    {
-      $model = parent::model($className);
+    return parent::model($className);
+  }
 
-      // db updates 'on the fly'
-      $model->updateDb($model);
-
-      return $model;
-    }
-    catch(CDbException $e)
-    {
-      self::createDbTable();
-      Yii::app()->controller->refresh();
-    }
-	}
-
-	/**
-	 * @return string the associated database table name
-	 */
-	public function tableName()
-	{
+  /**
+   * @return string the associated database table name
+   */
+  public function getCollectionName()
+  {
     if(!empty(Yii::app()->db->tablePrefix))
       return '{{user_oauth}}';
     else
       return 'user_oauth';
-	}
+  }
 
-	/**
-	 * @return array validation rules for model attributes.
-	 */
-	public function rules()
-	{
-		return array(
-		);
+  /**
+  * @return array validation rules for model attributes.
+  */
+  public function rules()
+  {
+	return array();
   }
 
   public function afterFind()
@@ -86,7 +81,7 @@ class UserOAuth extends CActiveRecord
       $this->_profileCache = (object)unserialize($this->profile_cache);
   }
 
-  public function beforeSave() 
+  public function beforeSave()
   {
     if(!empty($this->_profileCache))
       $this->profile_cache = serialize((array)$this->_profileCache);
@@ -136,7 +131,7 @@ class UserOAuth extends CActiveRecord
 
     return $config;
   }
-  
+
   /**
    * @access public
    * @return array of UserOAuth models
@@ -189,9 +184,9 @@ class UserOAuth extends CActiveRecord
   }
 
   /**
-   * authenticates user by specified adapter  
-   * 
-   * @param string $provider 
+   * authenticates user by specified adapter
+   *
+   * @param string $provider
    * @access public
    * @return void
    */
@@ -217,9 +212,9 @@ class UserOAuth extends CActiveRecord
       {
         $error = "";
         switch( $e->getCode() )
-        { 
-          case 6 : //$error = "User profile request failed. Most likely the user is not connected to the provider and he should to authenticate again."; 
-          case 7 : //$error = "User not connected to the provider."; 
+        {
+          case 6 : //$error = "User profile request failed. Most likely the user is not connected to the provider and he should to authenticate again.";
+          case 7 : //$error = "User not connected to the provider.";
             $this->logout();
             return $this->authenticate($provider);
           break;
@@ -240,7 +235,7 @@ class UserOAuth extends CActiveRecord
     if(!empty($this->_adapter))
     {
       $this->_adapter->logout();
-      $this->unsetAttributes(); 
+      $this->unsetAttributes();
     }
   }
 
@@ -258,8 +253,8 @@ class UserOAuth extends CActiveRecord
   }
 
   /**
-   * binds local user to current provider 
-   * 
+   * binds local user to current provider
+   *
    * @param mixed $user_id id of the user
    * @access public
    * @return whether the model successfully saved
@@ -295,70 +290,6 @@ class UserOAuth extends CActiveRecord
     return $this->_profileCache;
   }
 
-  /**
-   * creates table for holding provider bindings  
-   */
-  protected static function createDbTable()
-  {
-    //TODO: remove me in newer versions
-    if(Yii::app()->db->getSchema()->getTable('user_oauth') !== null && !empty(Yii::app()->db->tablePrefix))
-    {
-      // providing table rename, to handle support of prefixed tables in v.1.2.2
-      Yii::app()->db->createCommand('RENAME TABLE  `user_oauth` TO `tbl_user_oauth`')->execute();
-      Yii::app()->controller->refresh();
-    }
-
-    $sql = file_get_contents(dirname(__FILE__).'/user_oauth.sql');
-    $sql = strtr($sql, array('{{user_oauth}}' => Yii::app()->db->tablePrefix . 'user_oauth'));
-    Yii::app()->db->createCommand($sql)->execute();
-  }
-
-  /**
-   * Runs DB updates on the fly
-   */
-  protected function updateDb($model)
-  {
-    $updates = array();
-    // the try statement to correct my stupid column names in v1.0.1 of hoauth
-    // sory about this
-    try
-    {
-      $model->provider=$model->provider;
-    }
-    catch(Exception $e)
-    {
-      ob_start();
-?>
-ALTER TABLE  <?php echo '`' . $model->tableName() . '`'; ?> CHANGE  `name`  `provider` VARCHAR( 45 ) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL ,
-CHANGE  `value`  `identifier` VARCHAR( 64 ) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL
-<?php
-      $updates[] = ob_get_clean();
-    }
-
-    // profile caching since v.1.2.2
-    try
-    {
-      $model->profile_cache=$model->profile_cache;
-    }
-    catch(Exception $e)
-    {
-      ob_start();
-?>
-  ALTER TABLE <?php echo '`' . $model->tableName() . '`'; ?> ADD  `profile_cache` TEXT NOT NULL AFTER  `identifier`
-<?php
-      $updates[] = ob_get_clean();
-    }
-
-    if(count($updates))
-    {
-      foreach($updates as $sql)
-      {
-        Yii::app()->db->createCommand($sql)->execute();
-      }
-      Yii::app()->controller->refresh();
-    }
-  }
-
 	/**
 	 * @return array relational rules.
 	 */
@@ -366,7 +297,7 @@ CHANGE  `value`  `identifier` VARCHAR( 64 ) CHARACTER SET utf8 COLLATE utf8_gene
 	{
 		// NOTE: you may need to adjust the relation name and the related
 		// class name for the relations automatically generated below.
-    return array(
+        return array(
 			'user' => array(self::BELONGS_TO, 'User', 'user_id'),
 		);
 	}
